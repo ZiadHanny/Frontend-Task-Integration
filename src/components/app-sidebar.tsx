@@ -37,7 +37,7 @@ const data = {
       label: "AI Call Agent",
       items: [
         { title: "Agents", url: "/agents", icon: Bot },
-        { title: "Customer List", url: "#", icon: Users },
+        { title: "Customer List", url: "/customers", icon: Users },
         { title: "Campaigns", url: "#", icon: Megaphone },
         { title: "Analytics", url: "#", icon: BarChart3 },
         { title: "Recordings", url: "#", icon: Mic },
