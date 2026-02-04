@@ -1,15 +1,16 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
-  BadgeCheck,
-  Bell,
   ChevronsUpDown,
   CreditCard,
-  LifeBuoy,
+  ExternalLink,
+  HelpCircle,
+  FileText,
   LogOut,
   Settings,
-  Sparkles,
+  Users,
 } from "lucide-react"
 
 import {
@@ -43,6 +44,7 @@ export function NavUser({
   }
 }) {
   const { isMobile } = useSidebar()
+  const router = useRouter()
 
   return (
     <SidebarMenu>
@@ -84,24 +86,17 @@ export function NavUser({
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <Sparkles />
-                Upgrade to Pro
+              <DropdownMenuItem asChild>
+                <Link href="/settings?tab=billing">
+                  <CreditCard />
+                  Billing & Usage
+                </Link>
               </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <BadgeCheck />
-                Account
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <CreditCard />
-                Billing
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Bell />
-                Notifications
+              <DropdownMenuItem asChild>
+                <Link href="/settings?tab=users">
+                  <Users />
+                  User Management
+                </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
@@ -112,13 +107,23 @@ export function NavUser({
                   Settings
                 </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <LifeBuoy />
-                Support
+              <DropdownMenuItem asChild>
+                <a href="https://help.olimi.ai" target="_blank" rel="noopener noreferrer">
+                  <HelpCircle />
+                  Help
+                  <ExternalLink className="ml-auto h-3 w-3 text-muted-foreground" />
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a href="https://docs.olimi.ai" target="_blank" rel="noopener noreferrer">
+                  <FileText />
+                  API Docs
+                  <ExternalLink className="ml-auto h-3 w-3 text-muted-foreground" />
+                </a>
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/sign-in")}>
               <LogOut />
               Log out
             </DropdownMenuItem>

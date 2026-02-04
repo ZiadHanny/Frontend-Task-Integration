@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Plus,
   Trash2,
@@ -17,6 +18,9 @@ import {
   FileText,
   Upload,
   KeyRound,
+  MoreHorizontal,
+  Pencil,
+  ChevronLeft,
 } from "lucide-react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -60,13 +64,25 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+const VALID_TABS = ["profile", "security", "tags", "custom-keys", "users", "billing", "api", "summary-template"];
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const defaultTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "profile";
+
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       <h1 className="text-3xl font-bold">Settings</h1>
 
-      <Tabs defaultValue="profile" orientation="vertical" className="gap-6">
+      <Tabs defaultValue={defaultTab} key={defaultTab} orientation="vertical" className="gap-6">
         <TabsList className="gap-2 p-3">
           <TabsTrigger value="profile" className="px-6 py-2.5">
             <User />
@@ -862,10 +878,621 @@ function BillingTab() {
   );
 }
 
+const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
+
+const METHOD_COLORS: Record<string, string> = {
+  GET: "bg-blue-100 text-blue-700",
+  POST: "bg-green-100 text-green-700",
+  PUT: "bg-yellow-100 text-yellow-700",
+  PATCH: "bg-orange-100 text-orange-700",
+  DELETE: "bg-red-100 text-red-700",
+};
+
+const PROPERTY_TYPES = [
+  "String",
+  "Number",
+  "Boolean",
+  "Object",
+  "Array",
+  "Integer",
+] as const;
+
+type LiveApiHeader = { id: string; key: string; value: string };
+type LiveApiBodyProperty = {
+  id: string;
+  name: string;
+  type: string;
+  defaultValue: string;
+  description: string;
+  required: boolean;
+};
+type LiveApi = {
+  id: string;
+  name: string;
+  description: string;
+  method: string;
+  url: string;
+  headers: LiveApiHeader[];
+  bodyProperties: LiveApiBodyProperty[];
+};
+
 function ApiTab() {
   const [showKey, setShowKey] = useState(false);
   const apiKey = "sk-olimi-xxxxxxxxxxxxxxxxxxxxxxxxxxxx";
 
+  const [liveApis, setLiveApis] = useState<LiveApi[]>([
+    {
+      id: "1",
+      name: "Create Contact",
+      description:
+        "Creates a new contact in the CRM system with the provided details",
+      method: "POST",
+      url: "https://api.example.com/v1/contacts",
+      headers: [
+        { id: "h1", key: "Content-Type", value: "application/json" },
+      ],
+      bodyProperties: [
+        {
+          id: "p1",
+          name: "email",
+          type: "String",
+          defaultValue: "",
+          description: "Contact email address",
+          required: true,
+        },
+        {
+          id: "p2",
+          name: "name",
+          type: "String",
+          defaultValue: "",
+          description: "Contact full name",
+          required: true,
+        },
+      ],
+    },
+    {
+      id: "2",
+      name: "Get Account Balance",
+      description:
+        "Retrieves the current account balance for a given customer ID",
+      method: "GET",
+      url: "https://api.example.com/v1/accounts/balance",
+      headers: [],
+      bodyProperties: [],
+    },
+    {
+      id: "3",
+      name: "Update Subscription",
+      description:
+        "Updates the subscription plan for an existing customer",
+      method: "PUT",
+      url: "https://api.example.com/v1/subscriptions",
+      headers: [
+        { id: "h2", key: "Content-Type", value: "application/json" },
+      ],
+      bodyProperties: [],
+    },
+  ]);
+
+  // Form view state: null = list view, "new" = creating, string = editing id
+  const [formView, setFormView] = useState<string | null>(null);
+
+  // Form fields
+  const [apiName, setApiName] = useState("");
+  const [apiDescription, setApiDescription] = useState("");
+  const [apiMethod, setApiMethod] = useState("POST");
+  const [apiUrl, setApiUrl] = useState("");
+  const [apiHeaders, setApiHeaders] = useState<LiveApiHeader[]>([]);
+  const [bodyProperties, setBodyProperties] = useState<LiveApiBodyProperty[]>(
+    []
+  );
+
+  // Add property dialog
+  const [propertyDialogOpen, setPropertyDialogOpen] = useState(false);
+  const [editingProperty, setEditingProperty] = useState<string | null>(null);
+  const [propName, setPropName] = useState("");
+  const [propType, setPropType] = useState("String");
+  const [propDefault, setPropDefault] = useState("");
+  const [propDescription, setPropDescription] = useState("");
+  const [propRequired, setPropRequired] = useState(false);
+
+  // Validation
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  function resetForm() {
+    setApiName("");
+    setApiDescription("");
+    setApiMethod("POST");
+    setApiUrl("");
+    setApiHeaders([]);
+    setBodyProperties([]);
+    setFormErrors({});
+    setFormView(null);
+  }
+
+  function resetPropertyForm() {
+    setPropName("");
+    setPropType("String");
+    setPropDefault("");
+    setPropDescription("");
+    setPropRequired(false);
+    setEditingProperty(null);
+  }
+
+  function openNewForm() {
+    resetForm();
+    setFormView("new");
+  }
+
+  function openEditForm(id: string) {
+    const api = liveApis.find((a) => a.id === id);
+    if (!api) return;
+    setApiName(api.name);
+    setApiDescription(api.description);
+    setApiMethod(api.method);
+    setApiUrl(api.url);
+    setApiHeaders(api.headers.map((h) => ({ ...h })));
+    setBodyProperties(api.bodyProperties.map((p) => ({ ...p })));
+    setFormErrors({});
+    setFormView(id);
+  }
+
+  function validateForm(): boolean {
+    const errors: Record<string, string> = {};
+    if (!apiName.trim()) errors.name = "API name is required.";
+    if (!apiDescription.trim()) errors.description = "Description is required.";
+    if (!apiUrl.trim()) {
+      errors.url = "Request URL is required.";
+    } else if (
+      !apiUrl.trim().startsWith("https://") &&
+      !apiUrl.trim().startsWith("http://localhost")
+    ) {
+      errors.url = "URL must use HTTPS.";
+    }
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  }
+
+  function handleSaveApi() {
+    if (!validateForm()) return;
+    const apiData: LiveApi = {
+      id: formView === "new" ? crypto.randomUUID() : formView!,
+      name: apiName.trim(),
+      description: apiDescription.trim(),
+      method: apiMethod,
+      url: apiUrl.trim(),
+      headers: apiHeaders.filter((h) => h.key.trim()),
+      bodyProperties,
+    };
+
+    if (formView === "new") {
+      setLiveApis((prev) => [...prev, apiData]);
+    } else {
+      setLiveApis((prev) =>
+        prev.map((a) => (a.id === formView ? apiData : a))
+      );
+    }
+    resetForm();
+  }
+
+  function handleDeleteApi(id: string) {
+    setLiveApis((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  // Header management
+  function addHeader() {
+    setApiHeaders((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), key: "", value: "" },
+    ]);
+  }
+
+  function updateHeader(id: string, field: "key" | "value", val: string) {
+    setApiHeaders((prev) =>
+      prev.map((h) => (h.id === id ? { ...h, [field]: val } : h))
+    );
+  }
+
+  function removeHeader(id: string) {
+    setApiHeaders((prev) => prev.filter((h) => h.id !== id));
+  }
+
+  // Body property management
+  function handleSaveProperty() {
+    if (!propName.trim()) return;
+    const propData: LiveApiBodyProperty = {
+      id: editingProperty ?? crypto.randomUUID(),
+      name: propName.trim(),
+      type: propType,
+      defaultValue: propDefault.trim(),
+      description: propDescription.trim(),
+      required: propRequired,
+    };
+
+    if (editingProperty) {
+      setBodyProperties((prev) =>
+        prev.map((p) => (p.id === editingProperty ? propData : p))
+      );
+    } else {
+      setBodyProperties((prev) => [...prev, propData]);
+    }
+    resetPropertyForm();
+    setPropertyDialogOpen(false);
+  }
+
+  function openEditProperty(id: string) {
+    const prop = bodyProperties.find((p) => p.id === id);
+    if (!prop) return;
+    setEditingProperty(id);
+    setPropName(prop.name);
+    setPropType(prop.type);
+    setPropDefault(prop.defaultValue);
+    setPropDescription(prop.description);
+    setPropRequired(prop.required);
+    setPropertyDialogOpen(true);
+  }
+
+  function removeProperty(id: string) {
+    setBodyProperties((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  // ── Form view ──
+  if (formView !== null) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon-sm" onClick={resetForm}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h2 className="text-lg font-semibold">
+              {formView === "new"
+                ? "API Request Configuration"
+                : "Edit API Request Configuration"}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Configure the API request details including URL, method, headers,
+              and body.
+            </p>
+          </div>
+        </div>
+
+        {/* Basic Information */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Basic Information</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="api-name">
+                API Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="api-name"
+                placeholder="e.g. Create Contact, Get Balance"
+                value={apiName}
+                onChange={(e) => setApiName(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                The API name that will be used internally for this API request.
+              </p>
+              {formErrors.name && (
+                <p className="text-xs text-destructive">{formErrors.name}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="api-description">
+                Description <span className="text-destructive">*</span>
+              </Label>
+              <Textarea
+                id="api-description"
+                placeholder="Describe what this API does..."
+                rows={3}
+                value={apiDescription}
+                onChange={(e) => setApiDescription(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                A clear description helps the AI understand when and how to use
+                this tool effectively.
+              </p>
+              {formErrors.description && (
+                <p className="text-xs text-destructive">
+                  {formErrors.description}
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Request Configuration */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Request Configuration</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="api-url">
+                Request URL <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="api-url"
+                placeholder="https://api.example.com/v1/endpoint"
+                value={apiUrl}
+                onChange={(e) => setApiUrl(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                The endpoint URL where the API request will be sent. Must use
+                HTTPS.
+              </p>
+              {formErrors.url && (
+                <p className="text-xs text-destructive">{formErrors.url}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="api-method">
+                Request HTTP Method <span className="text-destructive">*</span>
+              </Label>
+              <Select value={apiMethod} onValueChange={setApiMethod}>
+                <SelectTrigger id="api-method" className="w-full">
+                  <SelectValue placeholder="Select method" />
+                </SelectTrigger>
+                <SelectContent>
+                  {HTTP_METHODS.map((method) => (
+                    <SelectItem key={method} value={method}>
+                      {method}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                The HTTP method to use for the request.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Request Headers */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Request Headers</CardTitle>
+            <CardDescription>
+              Custom headers to include with the request (e.g. Content-Type).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {apiHeaders.length > 0 && (
+              <div className="space-y-2">
+                {apiHeaders.map((header) => (
+                  <div key={header.id} className="flex items-center gap-2">
+                    <Input
+                      placeholder="Key"
+                      value={header.key}
+                      onChange={(e) =>
+                        updateHeader(header.id, "key", e.target.value)
+                      }
+                      className="flex-1"
+                    />
+                    <Input
+                      placeholder="Value"
+                      value={header.value}
+                      onChange={(e) =>
+                        updateHeader(header.id, "value", e.target.value)
+                      }
+                      className="flex-1"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => removeHeader(header.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Button variant="outline" onClick={addHeader}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Header
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Request Body */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Request Body</CardTitle>
+            <CardDescription>
+              Define the structure of your request body using the schema builder.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {bodyProperties.length > 0 ? (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Default</TableHead>
+                      <TableHead>Required</TableHead>
+                      <TableHead className="w-[80px]" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {bodyProperties.map((prop) => (
+                      <TableRow key={prop.id}>
+                        <TableCell className="font-medium">
+                          {prop.name}
+                          {prop.description && (
+                            <p className="text-xs font-normal text-muted-foreground">
+                              {prop.description}
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{prop.type}</Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {prop.defaultValue || "—"}
+                        </TableCell>
+                        <TableCell>
+                          {prop.required ? (
+                            <Badge variant="default">Required</Badge>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              Optional
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => openEditProperty(prop.id)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => removeProperty(prop.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-8 text-center">
+                <p className="text-sm text-muted-foreground">
+                  No properties defined.
+                </p>
+              </div>
+            )}
+
+            <Dialog
+              open={propertyDialogOpen}
+              onOpenChange={(open) => {
+                setPropertyDialogOpen(open);
+                if (!open) resetPropertyForm();
+              }}
+            >
+              <DialogTrigger asChild>
+                <Button variant="outline">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Property
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingProperty ? "Edit Property" : "Add New Property"}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Define a property for the request body schema.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="prop-name">
+                      Name <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="prop-name"
+                      placeholder="e.g. email, customer_id"
+                      value={propName}
+                      onChange={(e) => setPropName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="prop-type">Type</Label>
+                    <Select value={propType} onValueChange={setPropType}>
+                      <SelectTrigger id="prop-type" className="w-full">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PROPERTY_TYPES.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {type}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="prop-default">Default Value</Label>
+                    <Input
+                      id="prop-default"
+                      placeholder="e.g. active, 0, true"
+                      value={propDefault}
+                      onChange={(e) => setPropDefault(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Default or fixed value for this property.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="prop-description">Description</Label>
+                    <Textarea
+                      id="prop-description"
+                      placeholder="Describe what this property is for..."
+                      rows={2}
+                      value={propDescription}
+                      onChange={(e) => setPropDescription(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="prop-required"
+                      checked={propRequired}
+                      onCheckedChange={(checked) =>
+                        setPropRequired(checked === true)
+                      }
+                    />
+                    <Label htmlFor="prop-required" className="font-normal">
+                      Required
+                    </Label>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setPropertyDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleSaveProperty}
+                    disabled={!propName.trim()}
+                  >
+                    {editingProperty ? "Save Property" : "Add Property"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </CardContent>
+        </Card>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={resetForm}>
+            Cancel
+          </Button>
+          <Button onClick={handleSaveApi}>
+            {formView === "new" ? "Save API" : "Save Changes"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── List view ──
   return (
     <div className="space-y-6">
       <Card>
@@ -939,9 +1566,89 @@ function ApiTab() {
             ))}
           </div>
           <div className="flex gap-2">
-            <Input placeholder="https://your-app.com/webhook" className="flex-1" />
+            <Input
+              placeholder="https://your-app.com/webhook"
+              className="flex-1"
+            />
             <Button>Add Webhook</Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Live API Configurations</CardTitle>
+          <CardDescription>
+            Manage your API function tools and configurations.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button onClick={openNewForm}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Live API
+          </Button>
+
+          {liveApis.length > 0 && (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Method</TableHead>
+                    <TableHead>URL</TableHead>
+                    <TableHead className="w-[50px]" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {liveApis.map((api) => (
+                    <TableRow key={api.id}>
+                      <TableCell className="font-medium">
+                        {api.name}
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate text-muted-foreground">
+                        {api.description}
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${METHOD_COLORS[api.method] ?? "bg-muted text-muted-foreground"}`}
+                        >
+                          {api.method}
+                        </span>
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate font-mono text-sm text-muted-foreground">
+                        {api.url}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon-sm">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => openEditForm(api.id)}
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => handleDeleteApi(api.id)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

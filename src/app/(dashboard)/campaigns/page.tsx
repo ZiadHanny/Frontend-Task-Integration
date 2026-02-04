@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   EllipsisVertical,
   Pencil,
@@ -48,6 +49,7 @@ import { campaigns } from "@/data/campaigns";
 const PAGE_SIZE = 5;
 
 export default function CampaignsPage() {
+  const router = useRouter();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -130,10 +132,17 @@ export default function CampaignsPage() {
                 Cancel
               </Button>
               <Button
+                disabled={!campaignName || !callType}
                 onClick={() => {
-                  // handle creation
+                  const params = new URLSearchParams({
+                    name: campaignName,
+                    callType,
+                  });
                   setDialogOpen(false);
                   resetDialog();
+                  router.push(
+                    `/campaigns/createCampaign?${params.toString()}`,
+                  );
                 }}
               >
                 Create Campaign
@@ -223,7 +232,11 @@ export default function CampaignsPage() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() =>
+                          router.push(`/campaigns/${campaign.id}/edit`)
+                        }
+                      >
                         <Pencil className="mr-2 h-4 w-4" />
                         Edit
                       </DropdownMenuItem>
