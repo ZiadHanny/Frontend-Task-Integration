@@ -14,8 +14,9 @@ module.exports = (req, res, next) => {
   if (req.method === "POST" && req.url === "/api/attachments/upload-url") {
     const key = crypto.randomUUID();
     return res.status(200).json({
-      key,
+      // The frontend expects { signedUrl, attachmentId }
       signedUrl: `http://localhost:3001/upload/${key}`,
+      attachmentId: key,
       expiresIn: 3600,
     });
   }
